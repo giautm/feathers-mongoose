@@ -5,6 +5,11 @@ import { select } from 'feathers-commons';
 import errors from 'feathers-errors';
 import errorHandler from './error-handler';
 
+import {
+  connectionFromSlice,
+  paginateFromRelayArgs
+} from './relay-utils';
+
 // Create the service.
 class Service {
   constructor (options) {
@@ -29,76 +34,83 @@ class Service {
   }
 
   _find (params, count, getFilter = filter) {
-    const { filters, query } = getFilter(params.query || {});
-    const q = this.Model.find(query).lean(this.lean);
-
-    // $select uses a specific find syntax, so it has to come first.
-    if (Array.isArray(filters.$select)) {
-      let fields = {};
-
-      for (let key of filters.$select) {
-        fields[key] = 1;
-      }
-
-      q.select(fields);
-    } else if (typeof filters.$select === 'string' || typeof filters.$select === 'object') {
-      q.select(filters.$select);
-    }
-
-    // Handle $sort
-    if (filters.$sort) {
-      q.sort(filters.$sort);
-    }
-
-    // Handle $limit
-    if (typeof filters.$limit !== 'undefined') {
-      q.limit(filters.$limit);
-    }
-
-    // Handle $skip
-    if (filters.$skip) {
-      q.skip(filters.$skip);
-    }
-
-    // Handle $populate
-    if (filters.$populate) {
-      q.populate(filters.$populate);
-    }
-
-    let executeQuery = total => {
-      return q.exec().then(data => {
-        return {
-          total,
-          limit: filters.$limit,
-          skip: filters.$skip || 0,
-          data
-        };
-      });
-    };
-
-    if (filters.$limit === 0) {
-      executeQuery = total => {
+    const executeQuery = (total) => {
+      const { filters, query } = getFilter(params.query || {}, total);
+      if (filters.$limit === 0) {
         return Promise.resolve({
           total,
           limit: filters.$limit,
           skip: filters.$skip || 0,
           data: []
         });
-      };
-    }
+      }
+
+      const q = this.Model.find(query).lean(this.lean);
+
+      // $select uses a specific find syntax, so it has to come first.
+      if (Array.isArray(filters.$select)) {
+        let fields = {};
+
+        for (let key of filters.$select) {
+          fields[key] = 1;
+        }
+
+        q.select(fields);
+      } else if (typeof filters.$select === 'string' || typeof filters.$select === 'object') {
+        q.select(filters.$select);
+      }
+
+      // Handle $sort
+      if (filters.$sort) {
+        q.sort(filters.$sort);
+      }
+
+      // Handle $limit
+      if (typeof filters.$limit !== 'undefined') {
+        q.limit(filters.$limit);
+      }
+
+      // Handle $skip
+      if (filters.$skip) {
+        q.skip(filters.$skip);
+      }
+
+      // Handle $populate
+      if (filters.$populate) {
+        q.populate(filters.$populate);
+      }
+
+      return q.exec().then((data) => ({
+        total,
+        limit: filters.$limit,
+        skip: filters.$skip || 0,
+        data
+      }));
+    };
 
     if (count) {
+      const { query } = getFilter(params.query || {}, 0);
       return this.Model.where(query).count().exec().then(executeQuery);
     }
 
-    return executeQuery();
+    return executeQuery(0);
   }
 
   find (params) {
     const paginate = (params && typeof params.paginate !== 'undefined') ? params.paginate : this.paginate;
-    const result = this._find(params, !!paginate.default,
-      query => filter(query, paginate)
-    );
+    const result = this._find(params, !!paginate.default, (query, total) => {
+      if (params.relayArgs) {
+        return filter(query, Object.assign({}, paginate,
+          paginateFromRelayArgs(params.relayArgs, total)));
+      }
+
+      return filter(query, paginate);
+    });
+
+    if (params.relayArgs) {
+      return result.then(page => connectionFromSlice(
+        page.data, params.relayArgs, page.total));
+    }
 
     if (!paginate.default) {
       return result.then(page => page.data);

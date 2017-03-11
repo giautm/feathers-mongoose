@@ -1,5 +1,5 @@
 {
-  "name": "feathers-mongoose",
+  "name": "feathers-mongoose-relay",
   "description": "A Feathers service adapter for the Mongoose ORM",
   "version": "5.0.3",
   "homepage": "https://github.com/feathersjs/feathers-mongoose",
