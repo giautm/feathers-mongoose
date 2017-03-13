@@ -15,7 +15,7 @@ feathers-mongoose
 ## Installation
 
 ```bash
-npm install feathers-mongoose --save
+npm install feathers-mongoose-relay --save
 ```
 
 ## Documentation
